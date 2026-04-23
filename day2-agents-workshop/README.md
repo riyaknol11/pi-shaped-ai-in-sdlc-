@@ -126,6 +126,11 @@ This architecture separates concerns:
 - **Configuration:** Gmail SMTP (smtp.gmail.com:465)
 - **Authentication:** App Password (16-character Google-generated password)
 
+![alt text](<screenshots/Screenshot from 2026-04-23 14-22-56.png>)
+
+![alt text](<screenshots/Screenshot from 2026-04-23 14-21-21.png>)
+
+![alt text](<screenshots/Screenshot from 2026-04-23 14-04-07.png>)
 ---
 
 ## Setup Instructions
