@@ -1,120 +1,262 @@
 {
-  "name": "Meeting Scheduler Agent",
+  "name": "Meeting Scheduler - OpenAI",
   "nodes": [
     {
       "parameters": {
         "options": {}
       },
-      "id": "612988e6-9a1a-49f3-8bdf-252115898794",
+      "id": "bb76d036-83dc-4571-b88f-c92083dccf0c",
       "name": "When chat message received",
       "type": "@n8n/n8n-nodes-langchain.chatTrigger",
       "typeVersion": 1.1,
       "position": [
-        -176,
-        192
+        -464,
+        1392
       ],
-      "webhookId": "meeting-scheduler-chat"
+      "webhookId": "meeting-scheduler-imap"
     },
     {
       "parameters": {
         "options": {
-          "systemMessage": "You are an intelligent meeting scheduling assistant that helps professionals schedule meetings efficiently.\n\nYour capabilities:\n1. Read emails to identify meeting requests using Gmail\n2. Check calendar availability using Google Calendar\n3. Suggest optimal meeting times\n4. Send professional email responses with time slot options\n5. Create calendar events once confirmed\n6. Calculate meeting durations and time zones\n\nWhen processing meeting requests:\n1. Identify who wants to meet and the purpose\n2. Extract preferred dates/times if mentioned\n3. Check calendar for conflicts\n4. Suggest 3 available time slots (ideally spread across morning/afternoon)\n5. Draft a professional email response with:\n   - Acknowledgment of the request\n   - 3 specific time slot options with dates and times\n   - Duration of meeting\n   - Request for confirmation\n6. Once confirmed, create a calendar event\n\nBe professional, concise, and helpful. Always provide specific times in 12-hour format with AM/PM.\n\nExample response format:\n\"Thank you for your meeting request. I have checked the calendar and can suggest the following times:\n\n1. Monday, April 28 at 10:00 AM - 11:00 AM\n2. Tuesday, April 29 at 2:00 PM - 3:00 PM  \n3. Wednesday, April 30 at 11:00 AM - 12:00 PM\n\nPlease let me know which time works best for you, or suggest an alternative.\""
+          "systemMessage": "You are an intelligent meeting scheduling assistant.\n\nCapabilities:\n1. Check calendar availability using calendar_checker tool\n2. Suggest 3 optimal meeting times\n3. Draft professional confirmation emails\n4. Send emails using email_sender tool\n5. Calculate durations and time differences\n6. Remember conversation context\n\nProcess:\n1. When user asks about availability, use calendar_checker\n2. Suggest 3 specific time slots with dates\n3. Once confirmed, draft email and use email_sender\n4. Always format times in 12-hour AM/PM\n\nSimulated Calendar:\n- Mon 10am-11am: Team Standup\n- Tue 2pm-3pm: Client Call  \n- Wed 11am-12pm: 1:1 Manager\n- Thu 9am-10am: Planning\n- Avoid 12pm-1pm (lunch)\n- Working hours: 9am-5pm weekdays\n\nBe professional and helpful."
         }
       },
-      "id": "fda6952b-4f52-4402-bb63-f095ae535879",
+      "id": "85857d89-570d-4ce1-99dc-54bf9d734eb2",
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
       "position": [
-        128,
-        192
-      ]
-    },
-    {
-      "parameters": {
-        "options": {
-          "maxOutputTokens": 2048,
-          "temperature": 0.5
-        }
-      },
-      "id": "8544e750-b50c-447f-8429-f945660515de",
-      "name": "Google Gemini Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1,
-      "position": [
-        0,
-        416
+        80,
+        128
       ]
     },
     {
       "parameters": {
         "contextWindowLength": 10
       },
-      "id": "15dd59b6-490c-48bb-a4b6-6c752ee8b558",
+      "id": "d2745b83-2901-47d8-993a-b2003935d707",
       "name": "Window Buffer Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.2,
       "position": [
         160,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "name": "calendar_checker",
+        "description": "Check simulated calendar availability. Returns available time slots avoiding existing meetings and lunch. Input: date range like 'tomorrow', 'next week', or 'April 28-30'.",
+        "jsCode": "// Simulated Calendar Availability Checker\nconst input = $input.item.json;\n\n// Function to get next weekday dates\nfunction getNextWeekdays(count = 7) {\n  const dates = [];\n  const today = new Date();\n  let daysAdded = 0;\n  let currentDate = new Date(today);\n  \n  while (daysAdded < count) {\n    currentDate.setDate(currentDate.getDate() + 1);\n    const dayOfWeek = currentDate.getDay();\n    \n    // Skip weekends (0 = Sunday, 6 = Saturday)\n    if (dayOfWeek !== 0 && dayOfWeek !== 6) {\n      dates.push(new Date(currentDate));\n      daysAdded++;\n    }\n  }\n  \n  return dates;\n}\n\n// Simulated busy times (existing meetings)\nconst busyTimes = {\n  1: [{ start: 10, end: 11 }], // Monday: 10am-11am\n  2: [{ start: 14, end: 15 }], // Tuesday: 2pm-3pm\n  3: [{ start: 11, end: 12 }], // Wednesday: 11am-12pm\n  4: [{ start: 9, end: 10 }],  // Thursday: 9am-10am\n};\n\n// Lunch hour to avoid\nconst lunchHour = { start: 12, end: 13 };\n\n// Working hours\nconst workStart = 9;\nconst workEnd = 17;\n\n// Get available slots\nconst availableSlots = [];\nconst weekdays = getNextWeekdays(7);\n\nweekdays.forEach(date => {\n  const dayOfWeek = date.getDay(); // 1-5 for Mon-Fri\n  const dayBusy = busyTimes[dayOfWeek] || [];\n  \n  // Check each hour in working day\n  for (let hour = workStart; hour < workEnd; hour++) {\n    // Skip lunch\n    if (hour === lunchHour.start) continue;\n    \n    // Check if this hour is busy\n    const isBusy = dayBusy.some(busy => \n      hour >= busy.start && hour < busy.end\n    );\n    \n    if (!isBusy) {\n      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];\n      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', \n                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];\n      \n      const period = hour >= 12 ? 'PM' : 'AM';\n      const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);\n      \n      availableSlots.push({\n        day: dayNames[dayOfWeek],\n        date: `${monthNames[date.getMonth()]} ${date.getDate()}`,\n        time: `${displayHour}:00 ${period}`,\n        fullDate: date.toISOString().split('T')[0],\n        hour: hour\n      });\n    }\n  }\n});\n\n// Return first 10 available slots\nreturn {\n  available_slots: availableSlots.slice(0, 10),\n  total_found: availableSlots.length,\n  message: `Found ${availableSlots.length} available time slots`\n};"
+      },
+      "id": "edacc1c7-8ff6-4358-a57c-925bff7af450",
+      "name": "Code Tool - Calendar",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        576,
         464
       ]
     },
     {
+      "parameters": {
+        "name": "riyaasharma182@gmail.com",
+        "description": "Send email via SMTP. Input: JSON with {to: 'email@example.com', subject: 'Meeting Confirmed', body: 'email content'}. Sends using configured SMTP.",
+        "jsCode": "// SMTP Email Sender for Meeting Scheduler\nconst nodemailer = require('nodemailer');\n\n// Parse input from AI agent\nconst input = $input.item.json;\nlet emailData;\n\ntry {\n  if (typeof input === 'string') {\n    emailData = JSON.parse(input);\n  } else {\n    emailData = input;\n  }\n} catch (e) {\n  return { error: 'Invalid email data format' };\n}\n\n// Extract email details\nconst { to, subject, body } = emailData;\n\nif (!to || !subject || !body) {\n  return { \n    error: 'Missing required fields: to, subject, or body' \n  };\n}\n\n// Configure SMTP transporter\nconst transporter = nodemailer.createTransport({\n  host: 'smtp.gmail.com',\n  port: 465,\n  secure: true, // use SSL\n  auth: {\n    user: 'riyaasharma182@gmail.com',\n    pass: 'qerxyzcudwshfuky'    \n  }\n});\n\nconst mailOptions = {\n  from: 'riyaasharma182@gmail.com',  \n  to: to,\n  subject: subject,\n  text: body,\n  html: body.replace(/\\n/g, '<br>') \n};\n\n// Send email\ntry {\n  const info = await transporter.sendMail(mailOptions);\n  return {\n    success: true,\n    message: `Email sent successfully to ${to}`,\n    messageId: info.messageId,\n    subject: subject\n  };\n} catch (error) {\n  return {\n    success: false,\n    error: error.message\n  };\n}"
+      },
+      "id": "632a6bad-704a-4fc4-bad5-8ba3ca12723a",
+      "name": "Code Tool - Email",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        448,
+        480
+      ]
+    },
+    {
       "parameters": {},
-      "id": "47449773-b18f-48eb-8d69-2d77a7acef95",
+      "id": "3b925ac6-7656-49b7-b95a-c7262183a4b0",
       "name": "Calculator",
       "type": "@n8n/n8n-nodes-langchain.toolCalculator",
       "typeVersion": 1,
       "position": [
-        400,
-        496
+        272,
+        384
       ]
     },
     {
       "parameters": {
-        "name": "code_tool",
-        "description": "Execute JavaScript code for date/time calculations, formatting time slots, or processing meeting data. Use this for complex time zone conversions or date arithmetic."
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
       },
-      "id": "7ad7bad5-195e-48b8-8e18-2d0e3f46c539",
-      "name": "Code Tool",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -64,
+        368
+      ],
+      "id": "a9f09a64-83a0-4b8a-a6ec-4c575810c75c",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "JDX57ThH1RaK15uQ",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "calendar_checker",
+        "description": "Check simulated calendar availability for scheduling meetings. Input: date range like 'tomorrow', 'next week', or 'April 28-30'. Returns available time slots avoiding existing meetings and lunch hours.",
+        "jsCode": "// Calendar Availability Checker\n// Returns a STRING response (not object) for AI agent\n\n// Get input from AI agent\nconst input = $input.item.json;\nconst query = typeof input === 'string' ? input : JSON.stringify(input);\n\n// Helper function to get next weekdays\nfunction getNextWeekdays(count = 7) {\n  const dates = [];\n  const today = new Date();\n  let daysAdded = 0;\n  let currentDate = new Date(today);\n  \n  while (daysAdded < count) {\n    currentDate.setDate(currentDate.getDate() + 1);\n    const dayOfWeek = currentDate.getDay();\n    \n    // Skip weekends (0 = Sunday, 6 = Saturday)\n    if (dayOfWeek !== 0 && dayOfWeek !== 6) {\n      dates.push(new Date(currentDate));\n      daysAdded++;\n    }\n  }\n  \n  return dates;\n}\n\n// Simulated busy times (existing meetings)\nconst busyTimes = {\n  1: [{ start: 10, end: 11, title: 'Team Standup' }],\n  2: [{ start: 14, end: 15, title: 'Client Call' }],\n  3: [{ start: 11, end: 12, title: '1:1 Manager' }],\n  4: [{ start: 9, end: 10, title: 'Planning Session' }],\n};\n\n// Lunch hour and working hours\nconst lunchStart = 12;\nconst workStart = 9;\nconst workEnd = 17;\n\n// Get available slots\nconst availableSlots = [];\nconst weekdays = getNextWeekdays(7);\n\nweekdays.forEach(date => {\n  const dayOfWeek = date.getDay();\n  const dayBusy = busyTimes[dayOfWeek] || [];\n  \n  for (let hour = workStart; hour < workEnd; hour++) {\n    if (hour === lunchStart) continue;\n    \n    const isBusy = dayBusy.some(busy => \n      hour >= busy.start && hour < busy.end\n    );\n    \n    if (!isBusy) {\n      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];\n      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', \n                          'July', 'August', 'September', 'October', 'November', 'December'];\n      \n      const period = hour >= 12 ? 'PM' : 'AM';\n      const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);\n      \n      availableSlots.push({\n        day: dayNames[dayOfWeek],\n        date: `${monthNames[date.getMonth()]} ${date.getDate()}`,\n        time: `${displayHour}:00 ${period}`,\n        fullDateTime: `${dayNames[dayOfWeek]}, ${monthNames[date.getMonth()]} ${date.getDate()} at ${displayHour}:00 ${period}`\n      });\n    }\n  }\n});\n\n// Format as STRING response for AI agent\nconst topSlots = availableSlots.slice(0, 10);\nlet responseText = `Found ${availableSlots.length} available time slots in the next week.\\n\\n`;\nresponseText += `Top ${topSlots.length} available times:\\n`;\n\ntopSlots.forEach((slot, i) => {\n  responseText += `${i + 1}. ${slot.fullDateTime}\\n`;\n});\n\nresponseText += `\\nAll times avoid existing meetings: Mon 10-11am (Team Standup), Tue 2-3pm (Client Call), Wed 11am-12pm (1:1 Manager), Thu 9-10am (Planning), and lunch hour 12-1pm.`;\n\n// CRITICAL: Return a STRING, not an object!\nreturn responseText;"
+      },
+      "id": "4f60af0b-a1e8-41ce-b8cd-2ef4329ac502",
+      "name": "Code - Calendar Checker",
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1,
       "position": [
-        288,
-        496
+        -32,
+        1728
       ]
     },
     {
       "parameters": {
-        "calendar": {
-          "__rl": true,
-          "mode": "list",
-          "value": ""
-        },
-        "additionalFields": {}
+        "name": "email_sender",
+        "description": "Send a confirmation email. Accepts JSON input with 'to' (recipient email), 'subject' (email subject), and 'body' (email content). Example: {\"to\": \"user@example.com\", \"subject\": \"Meeting Confirmed\", \"body\": \"Your meeting is confirmed for Monday at 10am\"}. Returns confirmation message.",
+        "jsCode": "// Email Sender - Flexible Input Handler\nconst input = $input.item.json;\n\n// Handle various input formats\nlet to, subject, body;\n\n// Try to extract email data from different formats\nif (typeof input === 'string') {\n  try {\n    const parsed = JSON.parse(input);\n    to = parsed.to;\n    subject = parsed.subject;\n    body = parsed.body;\n  } catch (e) {\n    return `Error: Cannot parse email data. Input received: ${input}`;\n  }\n} else if (input && typeof input === 'object') {\n  to = input.to || input.recipient || input.email;\n  subject = input.subject || input.title;\n  body = input.body || input.message || input.content;\n} else {\n  return `Error: Invalid input format. Received: ${JSON.stringify(input)}`;\n}\n\n// Validate we have the required fields\nif (!to) {\n  return `Error: Missing 'to' email address. Received data: ${JSON.stringify(input)}`;\n}\n\nif (!subject) {\n  subject = \"Meeting Confirmation\"; \n}\n\nif (!body) {\n  body = \"This is a meeting confirmation email.\";  \n}\n\nconst timestamp = new Date().toLocaleString();\nconst messageId = `<${Date.now()}@meeting-scheduler>`;\n\nreturn `✅ EMAIL SENT SUCCESSFULLY!\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📧 Email Details:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nTo: ${to}\nSubject: ${subject}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nMessage Content:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${body}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nDelivery Info:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSent: ${timestamp}\nMessage ID: ${messageId}\nStatus: Delivered ✓\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nNote: This is a simulated email for demonstration purposes.\nIn production, this would send via Gmail SMTP.`;"
       },
-      "type": "n8n-nodes-base.googleCalendarTool",
-      "typeVersion": 1.3,
+      "id": "a245567c-47cd-42dd-8c6f-f4bee88048d1",
+      "name": "Code - Email Sender",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
       "position": [
-        544,
-        432
+        416,
+        1936
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are an intelligent meeting scheduling assistant.\n\nCapabilities:\n1. Check calendar availability using calendar_checker tool\n2. Suggest optimal meeting times\n3. Draft professional confirmation emails\n4. Calculate durations and time differences\n5. Remember conversation context\n\nProcess:\n1. When user asks about availability, use calendar_checker\n2. Suggest 3 specific time slots with dates\n3. When user confirms a time and asks to send email, respond with:\n   EMAIL_DATA:\n   TO: [recipient email]\n   SUBJECT: [email subject]\n   BODY: [email message body]\n\nSimulated Calendar:\n- Mon 10am-11am: Team Standup\n- Tue 2pm-3pm: Client Call\n- Wed 11am-12pm: 1:1 Manager\n- Thu 9am-10am: Planning\n- Avoid 12pm-1pm (lunch)\n- Working hours: 9am-5pm weekdays\n\nWhen drafting confirmation emails, use this format:\nEMAIL_DATA:\nTO: recipient@email.com\nSUBJECT: Meeting Confirmed - [Date] at [Time]\nBODY: Dear [Name],\n\nThis confirms our meeting scheduled for:\n📅 Date: [Full Date]\n🕐 Time: [Time]\n⏱️ Duration: 1 hour\n📋 Topic: [Meeting Purpose]\n\nLooking forward to our discussion.\n\nBest regards,\nYour Meeting Assistant\n\nBe professional and helpful."
+        }
+      },
+      "id": "e6daf6d6-b79d-42e9-b6b5-e1a3671c768d",
+      "name": "AI Agent1",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -240,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "options": {
+          "maxTokens": 2048,
+          "temperature": 0.5
+        }
+      },
+      "id": "dc7a8d3e-706c-4f98-86e2-80e0b48f2bbd",
+      "name": "OpenAI Chat Model1",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        -928,
+        1680
       ],
-      "id": "7ec9a1ac-b915-40d9-aa8c-61549b1082a7",
-      "name": "Create an event in Google Calendar"
+      "credentials": {
+        "openAiApi": {
+          "id": "JDX57ThH1RaK15uQ",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 10
+      },
+      "id": "bbe7ba5c-fa4f-4483-8236-551e40174897",
+      "name": "Window Buffer Memory1",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [
+        -176,
+        1728
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c7d48d66-ba6f-44e5-acb2-fc9d107c6489",
+      "name": "Calculator1",
+      "type": "@n8n/n8n-nodes-langchain.toolCalculator",
+      "typeVersion": 1,
+      "position": [
+        112,
+        1728
+      ]
     },
     {
       "parameters": {
         "options": {}
       },
-      "type": "n8n-nodes-base.gmailTool",
-      "typeVersion": 2.2,
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
       "position": [
-        720,
-        416
+        -336,
+        1712
       ],
-      "id": "571f2f45-eda0-484d-bbb7-a1c69cbd5339",
-      "name": "Send a message in Gmail",
-      "webhookId": "569e58a5-c9b9-41aa-9715-213175c67c65"
+      "id": "9aba8646-6d2c-4c24-bd13-96b1668b6bd3",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "qJMDr13SLZNyAtUk",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract email data from AI Agent response\nconst agentResponse = $input.first().json.output;\n\n// Look for EMAIL_DATA marker\nif (!agentResponse || typeof agentResponse !== 'string') {\n  return { \n    shouldSend: false,\n    message: 'No email data found in response'\n  };\n}\n\n// Check if response contains email data\nif (!agentResponse.includes('EMAIL_DATA:')) {\n  return {\n    shouldSend: false,\n    message: agentResponse\n  };\n}\n\n// Extract email fields using regex\nconst toMatch = agentResponse.match(/TO:\\s*(.+)/);\nconst subjectMatch = agentResponse.match(/SUBJECT:\\s*(.+)/);\nconst bodyMatch = agentResponse.match(/BODY:\\s*([\\s\\S]+?)(?=\\n\\n|$)/);\n\nif (!toMatch || !subjectMatch || !bodyMatch) {\n  return {\n    shouldSend: false,\n    error: 'Could not parse email data',\n    raw: agentResponse\n  };\n}\n\n// Return structured data for SMTP node\nreturn {\n  shouldSend: true,\n  to: toMatch[1].trim(),\n  subject: subjectMatch[1].trim(),\n  body: bodyMatch[1].trim(),\n  fromEmail: 'riyaasharma182@gmail.com'\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        1392
+      ],
+      "id": "5fcaa245-e5e3-4219-a8ae-c3fcbdbe25c6",
+      "name": "Parse Email Data"
+    },
+    {
+      "parameters": {
+        "fromEmail": "riyaasharma182@gmail.com",
+        "toEmail": "riyaasharma182@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        336,
+        1392
+      ],
+      "id": "d2e3e9d4-94e2-43f0-8ed2-b3134f319aa5",
+      "name": "Send an Email",
+      "webhookId": "ff4d0d4f-6a61-45a7-ad08-69f41046a292",
+      "credentials": {
+        "smtp": {
+          "id": "KThgjlHCLEcZEYkg",
+          "name": "SMTP account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -123,41 +265,8 @@
       "main": [
         [
           {
-            "node": "AI Agent",
+            "node": "AI Agent1",
             "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Google Gemini Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Window Buffer Memory": {
-      "ai_memory": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_memory",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code Tool": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_tool",
             "index": 0
           }
         ]
@@ -174,7 +283,7 @@
         ]
       ]
     },
-    "Create an event in Google Calendar": {
+    "Code Tool - Email": {
       "ai_tool": [
         [
           {
@@ -185,7 +294,7 @@
         ]
       ]
     },
-    "Send a message in Gmail": {
+    "Code Tool - Calendar": {
       "ai_tool": [
         [
           {
@@ -195,17 +304,116 @@
           }
         ]
       ]
+    },
+    "Window Buffer Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        []
+      ]
+    },
+    "Window Buffer Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculator1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Email Sender": {
+      "ai_tool": [
+        []
+      ]
+    },
+    "Code - Calendar Checker": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Parse Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email Data": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "0486ba33-980d-420a-9ad9-a466cfd3a8be",
+  "versionId": "72cd447c-e298-428f-afca-5603330aac92",
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "09adf9861db9e866c32dab32bc828431f724dc8686144a80c289ed8a9b2f622d"
   },
-  "id": "Jpww1ihlZRXKmUUC",
+  "id": "8V159fVXR7fV3iES",
   "tags": []
 }
